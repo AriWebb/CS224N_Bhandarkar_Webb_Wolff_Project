@@ -1,129 +1,75 @@
 from datetime import datetime
 import json
 import os
-import re
 import time
+# Allowed genres just has one set containing all genres we will allow
+import allowed_genres
 
 from urllib.request import urlopen
 from urllib.error import HTTPError
 import bs4
 import pandas as pd
+import pickle
 
+""" Goodreads Website Scraper - Ari Webb - 2/12/2023
+    Based off code found here: https://github.com/cl3080/Auto-tagging-Books-Using-BERT
+    Scrapes Goodreads website and puts JSON objects containing book titles, description and genre tags into
+    output files.
 
-def get_shelves(soup):
+"""
 
-    shelf_count_dict = {}
+OUTPUT_DIR_PATH = '/home/arijwebb/cs224n_final/minbert-default-final-project/goodreads_scraper/data'
+NUM_TO_SCRAPE = 10000
 
-    if soup.find('a', text='See top shelves…'):
-
-        # Find shelves text.
-        shelves_url = soup.find('a', text='See top shelves…')['href']
-        source = urlopen('https://www.goodreads.com' + shelves_url)
-        soup = bs4.BeautifulSoup(source, 'lxml')
-        shelves = [' '.join(node.text.strip().split()) for node in soup.find_all('div', {'class': 'shelfStat'})]
-
-        # Format shelves text.
-        shelf_count_dict = {}
-        for _shelf in shelves:
-            _shelf_name = _shelf.split()[:-2][0]
-            _shelf_count = int(_shelf.split()[-2].replace(',', ''))
-            shelf_count_dict[_shelf_name] = _shelf_count
-
-    return shelf_count_dict
-
+def get_from_doc(soup, arg1, arg2, arg3):
+    return soup.find(arg1, {arg2: arg3})
 
 def get_genres(soup):
     genres = []
-    for node in soup.find_all('div', {'class': 'left'}):
-        current_genres = node.find_all('a', {'class': 'actionLinkLite bookPageGenreLink'})
-        current_genre = ' > '.join([g.text for g in current_genres])
-        if current_genre.strip():
-            genres.append(current_genre)
+    s = get_from_doc(soup, 'div', 'data-testid', 'genresList')
+    if not s:
+        return None
+    s = s.text
+    # Currently we check if each individual genre is in string, which is
+    # O(n) where n is # of allowed genres. Could instead tokenize string
+    # which would go faster.
+    for genre in allowed_genres.all:
+        if genre in s:
+            genres.append(genre)
     return genres
 
-
-def get_series_name(soup):
-    series = soup.find(id="bookSeries").find("a")
-    if series:
-        series_name = re.search(r'\((.*?)\)', series.text).group(1)
-        return series_name
-    else:
-        return ""
-
-
 def get_description(soup):
-    ' '.join(soup.find('h1', {'data-testid': 'bookTitle'}).text.split())
-    description = soup.find(id="description")
+    s = get_from_doc(soup, 'div', 'data-testid', 'description')
+    if not s:
+        return None
+    return ' '.join(s.text.split())
 
-def get_series_uri(soup):
-    series = soup.find(id="bookSeries").find("a")
-    if series:
-        series_uri = series.get("href")
-        return series_uri
-    else:
-        return ""
+def get_title(soup):
+    s = get_from_doc(soup, 'h1', 'data-testid', 'bookTitle')
+    if not s:
+        return None
+    return ' '.join(s.text.split())
 
-
-def get_isbn(soup):
-    try:
-        isbn = re.findall(r'nisbn: [0-9]{10}' , str(soup))[0].split()[1]
-        return isbn
-    except:
-        return "isbn not found"
-
-def get_isbn13(soup):
-    try:
-        isbn13 = re.findall(r'nisbn13: [0-9]{13}' , str(soup))[0].split()[1]
-        return isbn13
-    except:
-        return "isbn13 not found"
-
-
-def get_rating_distribution(soup):
-    distribution = re.findall(r'renderRatingGraph\([\s]*\[[0-9,\s]+', str(soup))[0]
-    distribution = ' '.join(distribution.split())
-    distribution = [int(c.strip()) for c in distribution.split('[')[1].split(',')]
-    distribution_dict = {'5 Stars': distribution[0],
-                         '4 Stars': distribution[1],
-                         '3 Stars': distribution[2],
-                         '2 Stars': distribution[3],
-                         '1 Star':  distribution[4]}
-    return distribution_dict
-
-
-def get_num_pages(soup):
-    if soup.find('span', {'itemprop': 'numberOfPages'}):
-        num_pages = soup.find('span', {'itemprop': 'numberOfPages'}).text.strip()
-        return int(num_pages.split()[0])
-    return ''
-
-
-def get_year_first_published(soup):
-    if soup.find('nobr', attrs={'class':'greyText'}):
-        year_first_published = soup.find('nobr', attrs={'class':'greyText'}).string
-        return re.search('([0-9]{3,4})', year_first_published).group(1)
-    return ''
-
-def get_id(bookid):
-    pattern = re.compile("([^.-]+)")
-    return pattern.search(bookid).group()
 
 def scrape_book(book_id):
     url = 'https://www.goodreads.com/book/show/' + book_id
     source = urlopen(url)
     soup = bs4.BeautifulSoup(source, 'html.parser')
+    title = get_title(soup)
+    if title == None:
+        return None
+    genres = get_genres(soup)
+    description = get_description(soup)
 
-    return {'book_id_title':        book_id,
-            'book_id':              get_id(book_id),
-            'book_title':           ' '.join(soup.find('h1', {'data-testid': 'bookTitle'}).text.split()),
-            'genres':               get_genres(soup),
-            'description':       get_description(soup),
+    return {'book_id':        book_id,
+            'book_title':           title,
+            'genres':               genres,
+            'description':       description,
             }
 
 def condense_books(books_directory_path):
 
     books = []
-
     for file_name in os.listdir(books_directory_path):
         if file_name.endswith('.json') and not file_name.startswith('.') and file_name != "all_books.json":
             _book = json.load(open(books_directory_path + '/' + file_name, 'r')) #, encoding='utf-8', errors='ignore'))
@@ -132,16 +78,13 @@ def condense_books(books_directory_path):
     return books
 
 def main():
-
     start_time = datetime.now()
-
-    output_directory_path = '/home/arijwebb/Auto-tagging-Books-Using-BERT/Data/books'
-    book_ids  = [str(i) for i in range(1,10000)]
+    book_ids  = [str(i) for i in range(1,NUM_TO_SCRAPE)]
     books_already_scraped = []
-   # if os.path.isfile(output_directory_path):
-    books_already_scraped =  [file_name.replace('.json', '') for file_name in os.listdir(output_directory_path) if file_name.endswith('.json') and not file_name.startswith('all_books')]
+    # No way to add books we skipped to already scraped yet, could build later.
+    books_already_scraped =  [file_name.replace('.json', '') for file_name in os.listdir(OUTPUT_DIR_PATH) if file_name.endswith('.json') and not file_name.startswith('all_books')]
     books_to_scrape       = [book_id for book_id in book_ids if book_id not in books_already_scraped]
-    condensed_books_path   = output_directory_path + '/all_books'
+    condensed_books_path   = OUTPUT_DIR_PATH + '/all_books'
 
     for i, book_id in enumerate(books_to_scrape):
         try:
@@ -149,22 +92,27 @@ def main():
             print(str(datetime.now()) + ' ' +': #' + str(i+1+len(books_already_scraped)) + ' out of ' + str(len(book_ids)) + ' books')
 
             book = scrape_book(book_id)
-            json.dump(book, open(output_directory_path + '/' + book_id + '.json', 'w'))
+            if book == None:
+                print(str(datetime.now()) + ' ' +': Not enough info on ' + book_id + ', moving on')
+            else:
+                json.dump(book, open(OUTPUT_DIR_PATH + '/' + book_id + '.json', 'w'))
 
             print('=============================')
 
         except HTTPError as e:
             print(e)
-            exit(0)
+            # if for whatever reason scrape_book throws an exception wait 60 seconds then run main again.
+            time.sleep(60)
+            main()
 
 
-    books = condense_books(output_directory_path)
+    books = condense_books(OUTPUT_DIR_PATH)
 
     json.dump(books, open(f"{condensed_books_path}.json", 'w'))
     book_df = pd.read_json(f"{condensed_books_path}.json")
     book_df.to_csv(f"{condensed_books_path}.csv", index=False, encoding='utf-8')
 
-    print(str(datetime.now()) + ' ' + f':\n\n🎉 Success! All book metadata scraped. 🎉\n\nMetadata files have been output to /{output_directory_path}\nGoodreads scraping run time = ⏰ ' + str(datetime.now() - start_time) + ' ⏰')
+    print(str(datetime.now()) + ' ' + f':\n\n🎉 Success! All book metadata scraped. 🎉\n\nMetadata files have been output to /{OUTPUT_DIR_PATH}\nGoodreads scraping run time = ⏰ ' + str(datetime.now() - start_time) + ' ⏰')
 
 
 
