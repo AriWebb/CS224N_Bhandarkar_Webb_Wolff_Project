@@ -86,24 +86,24 @@ def main():
     books_to_scrape       = [book_id for book_id in book_ids if book_id not in books_already_scraped]
     condensed_books_path   = OUTPUT_DIR_PATH + '/all_books'
 
-    for i, book_id in enumerate(books_to_scrape):
-        try:
-            print(str(datetime.now()) + ' ' +': Scraping ' + book_id + '...')
-            print(str(datetime.now()) + ' ' +': #' + str(i+1+len(books_already_scraped)) + ' out of ' + str(len(book_ids)) + ' books')
+    # for i, book_id in enumerate(books_to_scrape):
+    #     try:
+    #         print(str(datetime.now()) + ' ' +': Scraping ' + book_id + '...')
+    #         print(str(datetime.now()) + ' ' +': #' + str(i+1+len(books_already_scraped)) + ' out of ' + str(len(book_ids)) + ' books')
 
-            book = scrape_book(book_id)
-            if book == None:
-                print(str(datetime.now()) + ' ' +': Not enough info on ' + book_id + ', moving on')
-            else:
-                json.dump(book, open(OUTPUT_DIR_PATH + '/' + book_id + '.json', 'w'))
+    #         book = scrape_book(book_id)
+    #         if book == None:
+    #             print(str(datetime.now()) + ' ' +': Not enough info on ' + book_id + ', moving on')
+    #         else:
+    #             json.dump(book, open(OUTPUT_DIR_PATH + '/' + book_id + '.json', 'w'))
 
-            print('=============================')
+    #         print('=============================')
 
-        except HTTPError as e:
-            print(e)
-            # if for whatever reason scrape_book throws an exception wait 60 seconds then run main again.
-            time.sleep(60)
-            main()
+    #     except HTTPError as e:
+    #         print(e)
+    #         # if for whatever reason scrape_book throws an exception wait 60 seconds then run main again.
+    #         time.sleep(60)
+    #         main()
 
 
     books = condense_books(OUTPUT_DIR_PATH)
